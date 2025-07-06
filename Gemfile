@@ -1,0 +1,13 @@
+source 'https://rubygems.org'
+
+gem 'sinatra'
+gem 'sinatra-contrib'
+gem 'mongo'
+gem 'bson_ext'
+gem 'json'
+gem 'httparty'
+gem 'chartkick'
+gem 'groupdate'
+gem 'puma'
+gem 'dotenv'
+gem 'nokogiri'

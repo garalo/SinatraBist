@@ -1,0 +1,132 @@
+<div class="row mb-4">
+  <div class="col-md-12">
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="/">Ana Sayfa</a></li>
+        <li class="breadcrumb-item active">Yükselen Hisseler</li>
+      </ol>
+    </nav>
+  </div>
+</div>
+
+<div class="row mb-4">
+  <div class="col-md-12">
+    <div class="card">
+      <div class="card-header bg-success text-white">
+        <h4 class="mb-0">Yükselen Hisseler</h4>
+      </div>
+      <div class="card-body">
+        <p class="lead">Borsa İstanbul'da değer kazanan hisse senetleri.</p>
+        
+        <% if @rising_stocks.any? %>
+          <div class="table-responsive">
+            <table class="table table-striped table-hover">
+              <thead>
+                <tr>
+                  <th>Sembol</th>
+                  <th>Şirket Adı</th>
+                  <th>Son Fiyat</th>
+                  <th>Değişim</th>
+                  <th>Değişim %</th>
+                  <th>Hacim</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% @rising_stocks.each do |stock| %>
+                  <tr>
+                    <td><a href="/stock/<%= stock[:symbol] %>"><%= stock[:symbol] %></a></td>
+                    <td><%= stock[:name] %></td>
+                    <td><%= stock[:last_price] %></td>
+                    <td class="up">+<%= stock[:change] %></td>
+                    <td class="up">+<%= stock[:change_percentage] %>%</td>
+                    <td><%= number_with_delimiter(stock[:volume]) %></td>
+                  </tr>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
+        <% else %>
+          <div class="alert alert-info">
+            <p>Yükselen hisse bulunamadı. Verileri güncellemek için <a href="/update_stocks">tıklayın</a>.</p>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<% if @rising_stocks.any? %>
+  <div class="row">
+    <div class="col-md-12">
+      <div class="card">
+        <div class="card-header">
+          <h5 class="mb-0">Yükselen Hisseler Grafiği</h5>
+        </div>
+        <div class="card-body">
+          <div class="chart-container" style="position: relative; height:400px;">
+            <canvas id="risingStocksChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const ctx = document.getElementById('risingStocksChart').getContext('2d');
+      
+      // En çok yükselen 10 hisseyi al
+      const topRisingStocks = <%= @rising_stocks.take(10).to_json %>;
+      
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: topRisingStocks.map(stock => stock.symbol),
+          datasets: [{
+            label: 'Değişim Yüzdesi (%)',
+            data: topRisingStocks.map(stock => stock.change_percentage),
+            backgroundColor: 'rgba(40, 167, 69, 0.7)',
+            borderColor: 'rgba(40, 167, 69, 1)',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              beginAtZero: true,
+              title: {
+                display: true,
+                text: 'Değişim Yüzdesi (%)'
+              }
+            },
+            x: {
+              title: {
+                display: true,
+                text: 'Hisse Sembolü'
+              }
+            }
+          },
+          plugins: {
+            title: {
+              display: true,
+              text: 'En Çok Yükselen Hisseler',
+              font: {
+                size: 16
+              }
+            },
+            legend: {
+              display: false
+            }
+          }
+        }
+      });
+    });
+  </script>
+<% end %>
+
+<% # Helper metodu %>
+<% def number_with_delimiter(number) %>
+  <% number.to_s.reverse.gsub(/...(?=.)/,'\\&.').reverse %>
+<% end %>
