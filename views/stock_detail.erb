@@ -3,7 +3,7 @@
     <nav aria-label="breadcrumb">
       <ol class="breadcrumb">
         <li class="breadcrumb-item"><a href="/">Ana Sayfa</a></li>
-        <li class="breadcrumb-item active"><%= @stock[:symbol] %></li>
+        <li class="breadcrumb-item active"><%= @symbol %></li>
       </ol>
     </nav>
   </div>
@@ -13,7 +13,7 @@
   <div class="col-md-8">
     <div class="card">
       <div class="card-header d-flex justify-content-between align-items-center">
-        <h4 class="mb-0"><%= @stock[:symbol] %> - <%= @stock[:name] %></h4>
+        <h4 class="mb-0"><%= @symbol %> - <%= @stock[:name] %></h4>
         <span class="badge <%= @trend == 'up' || @trend == 'strong_up' ? 'bg-success' : (@trend == 'down' || @trend == 'strong_down' ? 'bg-danger' : 'bg-secondary') %>">
           <%= @trend == 'up' || @trend == 'strong_up' ? 'Yükseliş' : (@trend == 'down' || @trend == 'strong_down' ? 'Düşüş' : 'Nötr') %>
         </span>
@@ -23,20 +23,71 @@
           <div class="col-md-6">
             <h5>Son Fiyat</h5>
             <h2 class="<%= @stock[:change].to_f > 0 ? 'text-success' : (@stock[:change].to_f < 0 ? 'text-danger' : 'text-muted') %>">
-              <%= @stock[:last_price] %> TL
+              <%= number_with_delimiter(@last_price) %> TL
               <small><%= @stock[:change].to_f > 0 ? '+' : '' %><%= @stock[:change] %> (<%= @stock[:change_percentage].to_f > 0 ? '+' : '' %><%= @stock[:change_percentage] %>%)</small>
             </h2>
           </div>
           <div class="col-md-6">
             <h5>Hacim</h5>
-            <h2><%= number_with_delimiter(@stock[:volume]) %></h2>
+            <h2><%= number_with_delimiter(@stock[:volume_tl] || @stock[:volume] || 0) %></h2>
           </div>
         </div>
         
         <h5 class="mb-3">Fiyat Grafiği</h5>
-        <div class="chart-container" style="position: relative; height:300px;">
-          <canvas id="priceChart"></canvas>
-        </div>
+        <% if @history && @history.any? %>
+          <div class="chart-container" style="position: relative; height:300px;">
+            <canvas id="priceChart"></canvas>
+          </div>
+
+          <script>
+          document.addEventListener('DOMContentLoaded', function() {
+            const ctx = document.getElementById('priceChart').getContext('2d');
+            const prices = <%= (@history || []).map { |h| [h['date'] || h[:date], h['close'] || h[:close]] }.to_json %>;
+            const ma10Data = <%= (@ma10 || []).to_json %>;
+            const ma20Data = <%= (@ma20 || []).to_json %>;
+
+            new Chart(ctx, {
+              type: 'line',
+              data: {
+                labels: prices.map(p => p[0]),
+                datasets: [
+                  {
+                    label: 'Fiyat',
+                    data: prices.map(p => p[1]),
+                    borderColor: 'rgb(75, 192, 192)',
+                    tension: 0.1
+                  },
+                  {
+                    label: '10 Günlük Ortalama',
+                    data: ma10Data.map(p => p[1]),
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    borderDash: [5, 5],
+                    fill: false
+                  },
+                  {
+                    label: '20 Günlük Ortalama',
+                    data: ma20Data.map(p => p[1]),
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderDash: [5, 5],
+                    fill: false
+                  }
+                ]
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                  y: {
+                    beginAtZero: false
+                  }
+                }
+              }
+            });
+          });
+          </script>
+        <% else %>
+          <p>Geçmiş fiyat verisi yok.</p>
+        <% end %>
       </div>
     </div>
   </div>
@@ -47,193 +98,41 @@
         <h5 class="mb-0">Teknik Analiz</h5>
       </div>
       <div class="card-body">
-        <% support_resistance = @analyzer.calculate_support_resistance %>
-        <h6>Destek Seviyeleri</h6>
+        <h6>Destek</h6>
         <ul class="list-group mb-3">
-          <% support_resistance[:support_levels].each_with_index do |level, index| %>
-            <li class="list-group-item d-flex justify-content-between align-items-center">
-              Destek <%= index + 1 %>
-              <span class="badge bg-primary rounded-pill"><%= level %> TL</span>
-            </li>
-          <% end %>
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <span>Destek</span>
+            <span class="badge bg-primary rounded-pill"><%= number_with_delimiter(@support) %> TL</span>
+          </li>
         </ul>
-        
-        <h6>Direnç Seviyeleri</h6>
+        <h6>Direnç</h6>
         <ul class="list-group">
-          <% support_resistance[:resistance_levels].each_with_index do |level, index| %>
-            <li class="list-group-item d-flex justify-content-between align-items-center">
-              Direnç <%= index + 1 %>
-              <span class="badge bg-primary rounded-pill"><%= level %> TL</span>
-            </li>
-          <% end %>
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <span>Direnç</span>
+            <span class="badge bg-primary rounded-pill"><%= number_with_delimiter(@resistance) %> TL</span>
+          </li>
         </ul>
-      </div>
-    </div>
-    
-    <div class="card">
-      <div class="card-header">
-        <h5 class="mb-0">Kanal Analizi</h5>
-      </div>
-      <div class="card-body">
-        <% channels = @analyzer.identify_channels %>
-        <div class="alert <%= channels[:trend] == 'rising' ? 'alert-success' : 'alert-danger' %>">
-          <strong>Trend:</strong> <%= channels[:trend] == 'rising' ? 'Yükselen Kanal' : 'Düşen Kanal' %>
-        </div>
-        
-        <div class="chart-container" style="position: relative; height:200px;">
-          <canvas id="channelChart"></canvas>
+        <hr>
+        <h6>Trend</h6>
+        <div>
+          <% if @trend == 'up' || @trend == 'strong_up' %>
+            <span class="badge bg-success">Yükselen Trend</span>
+          <% elsif @trend == 'down' || @trend == 'strong_down' %>
+            <span class="badge bg-danger">Düşen Trend</span>
+          <% else %>
+            <span class="badge bg-secondary">Nötr</span>
+          <% end %>
         </div>
       </div>
     </div>
   </div>
 </div>
 
-<div class="row">
-  <div class="col-md-12">
-    <div class="card">
-      <div class="card-header">
-        <h5 class="mb-0">Hareketli Ortalamalar</h5>
-      </div>
-      <div class="card-body">
-        <div class="chart-container" style="position: relative; height:300px;">
-          <canvas id="maChart"></canvas>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-    // Fiyat grafiği
-    const priceCtx = document.getElementById('priceChart').getContext('2d');
-    const priceData = <%= @analyzer.prepare_chart_data.to_json %>;
-    
-    new Chart(priceCtx, {
-      type: 'line',
-      data: {
-        labels: priceData.map(item => item[0]),
-        datasets: [{
-          label: 'Fiyat (TL)',
-          data: priceData.map(item => item[1]),
-          borderColor: '<%= @trend == "up" || @trend == "strong_up" ? "rgba(40, 167, 69, 1)" : (@trend == "down" || @trend == "strong_down" ? "rgba(220, 53, 69, 1)" : "rgba(108, 117, 125, 1)") %>',
-          backgroundColor: '<%= @trend == "up" || @trend == "strong_up" ? "rgba(40, 167, 69, 0.1)" : (@trend == "down" || @trend == "strong_down" ? "rgba(220, 53, 69, 0.1)" : "rgba(108, 117, 125, 0.1)") %>',
-          borderWidth: 2,
-          fill: true,
-          tension: 0.1
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          y: {
-            beginAtZero: false
-          }
-        }
-      }
-    });
-    
-    // Kanal grafiği
-    const channelCtx = document.getElementById('channelChart').getContext('2d');
-    const channels = <%= @analyzer.identify_channels.to_json %>;
-    
-    new Chart(channelCtx, {
-      type: 'line',
-      data: {
-        labels: channels.trend_line.map(item => item[0]),
-        datasets: [
-          {
-            label: 'Trend Çizgisi',
-            data: channels.trend_line.map(item => item[1]),
-            borderColor: 'rgba(75, 192, 192, 1)',
-            borderWidth: 2,
-            fill: false,
-            tension: 0.1
-          },
-          {
-            label: 'Üst Kanal',
-            data: channels.upper_channel.map(item => item[1]),
-            borderColor: 'rgba(75, 192, 192, 0.5)',
-            borderWidth: 1,
-            borderDash: [5, 5],
-            fill: false,
-            tension: 0.1
-          },
-          {
-            label: 'Alt Kanal',
-            data: channels.lower_channel.map(item => item[1]),
-            borderColor: 'rgba(75, 192, 192, 0.5)',
-            borderWidth: 1,
-            borderDash: [5, 5],
-            fill: false,
-            tension: 0.1
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          y: {
-            beginAtZero: false
-          }
-        }
-      }
-    });
-    
-    // Hareketli ortalama grafiği
-    const maCtx = document.getElementById('maChart').getContext('2d');
-    const priceHistory = <%= @analyzer.prepare_chart_data.to_json %>;
-    const ma10 = <%= @analyzer.calculate_moving_average(10).to_json %>;
-    const ma20 = <%= @analyzer.calculate_moving_average(20).to_json %>;
-    
-    new Chart(maCtx, {
-      type: 'line',
-      data: {
-        labels: priceHistory.map(item => item[0]),
-        datasets: [
-          {
-            label: 'Fiyat',
-            data: priceHistory.map(item => item[1]),
-            borderColor: 'rgba(0, 123, 255, 1)',
-            backgroundColor: 'rgba(0, 123, 255, 0.1)',
-            borderWidth: 2,
-            fill: false,
-            tension: 0.1
-          },
-          {
-            label: '10 Günlük Hareketli Ortalama',
-            data: ma10.map(item => item[1]),
-            borderColor: 'rgba(255, 193, 7, 1)',
-            borderWidth: 2,
-            fill: false,
-            tension: 0.1
-          },
-          {
-            label: '20 Günlük Hareketli Ortalama',
-            data: ma20.map(item => item[1]),
-            borderColor: 'rgba(220, 53, 69, 1)',
-            borderWidth: 2,
-            fill: false,
-            tension: 0.1
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          y: {
-            beginAtZero: false
-          }
-        }
-      }
-    });
-  });
-</script>
-
-<% # Helper metodu %>
-<% def number_with_delimiter(number) %>
-  <% number.to_s.reverse.gsub(/...(?=.)/,'\\&.').reverse %>
-<% end %>
+<form action="/favorites/add/<%= @symbol %>" method="post" style="display:inline;">
+  <% if session[:favorites] && session[:favorites].include?(@symbol) %>
+    <button type="submit" class="btn btn-secondary" disabled>Zaten Favorilerde</button>
+  <% else %>
+    <button type="submit" class="btn btn-primary">Favorilere Ekle</button>
+  <% end %>
+</form>
+<a href="/" class="btn btn-link">Tüm Hisseler</a>

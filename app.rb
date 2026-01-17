@@ -26,15 +26,15 @@ helpers do
   # Sayıları binlik ayırıcı ile formatlar (Rails'in number_with_delimiter metodu benzeri)
   def number_with_delimiter(number, delimiter = ",", separator = ".")
     return number.to_s unless number.is_a?(Numeric) || (number.is_a?(String) && number =~ /\A[+-]?\d+(\.\d+)?\z/)
-    
+
     number = number.to_s.gsub(/\A\D+/, '').gsub(/\D+\z/, '')
-    
+
     # Ondalık kısmı ayır
     integer_part, decimal_part = number.split('.')
-    
+
     # Binlik ayırıcı ekle
     integer_part = integer_part.gsub(/(?<=\d)(?=(\d\d\d)+(?!\d))/, delimiter)
-    
+
     # Ondalık kısım varsa birleştir
     decimal_part ? "#{integer_part}#{separator}#{decimal_part}" : integer_part
   end
@@ -50,7 +50,7 @@ end
 get '/update_stocks' do
   fetcher = BistDataFetcher.new
   stocks_data = fetcher.fetch_all_stocks
-  
+
   if stocks_data.empty?
     session[:error] = "Hisse verileri güncellenemedi. Lütfen daha sonra tekrar deneyin."
   else
@@ -58,7 +58,7 @@ get '/update_stocks' do
     settings.db_manager.upsert_stocks(stocks_data)
     session[:success] = "#{stocks_data.size} hisse verisi başarıyla güncellendi."
   end
-  
+
   redirect '/'
 end
 
@@ -66,14 +66,40 @@ end
 get '/stock/:symbol' do
   @symbol = params[:symbol]
   @stock = settings.db_manager.get_stock(@symbol)
-  
+
   if @stock.nil?
     session[:error] = "Hisse senedi bulunamadı: #{@symbol}"
     redirect '/'
   end
-  
+
+  @last_price = @stock['last_price'] || 0
+
   @analyzer = StockAnalyzer.new(@stock)
+  
+  # Eğer geçmiş verisi yoksa veya çok eskiyse (örn. 24 saat), on-demand çek
+  if @stock['history'].nil? || @stock['history'].empty? || (@stock['timestamp'] && Time.now - @stock['timestamp'] > 86400)
+    puts "#{@symbol} için geçmiş verisi on-demand çekiliyor..."
+    fetcher = BistDataFetcher.new
+    @history = fetcher.fetch_stock_history(@symbol)
+    
+    # Veritabanını güncelle
+    if @history && !@history.empty?
+      @stock['history'] = @history
+      settings.db_manager.upsert_stocks([@stock])
+    end
+  else
+    @history = @stock['history']
+  end
+
   @trend = @analyzer.analyze_trend
+
+  support_resistance = @analyzer.calculate_support_resistance
+  @support = support_resistance[:support_levels].first
+  @resistance = support_resistance[:resistance_levels].first
+
+  @ma10 = @analyzer.calculate_moving_average(10)
+  @ma20 = @analyzer.calculate_moving_average(20)
+
   erb :stock_detail
 end
 
@@ -87,6 +113,29 @@ end
 get '/falling_stocks' do
   @falling_stocks = settings.db_manager.get_falling_stocks
   erb :falling_stocks
+end
+
+# Favori hisseler sayfası
+get '/favorites' do
+  @favorite_symbols = session[:favorites] || []
+  @favorite_stocks = @favorite_symbols.map { |sym| settings.db_manager.get_stock(sym) }.compact
+  erb :favorites
+end
+
+# Favori hisse ekle
+post '/favorites/add/:symbol' do
+  session[:favorites] ||= []
+  symbol = params[:symbol]
+  session[:favorites] << symbol unless session[:favorites].include?(symbol)
+  redirect back
+end
+
+# Favori hisseden çıkar
+post '/favorites/remove/:symbol' do
+  session[:favorites] ||= []
+  symbol = params[:symbol]
+  session[:favorites].delete(symbol)
+  redirect back
 end
 
 # API endpoint - Tüm hisseler

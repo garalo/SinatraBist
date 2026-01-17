@@ -24,7 +24,6 @@ class BistDataFetcher
 
     begin
       puts "BIST web sitesine bağlanılıyor: #{BIST_URL}"
-      # User-Agent ile birlikte BIST sayfasını çek (10 saniye timeout ile)
       response = HTTParty.get(BIST_URL, {
         headers: {
           'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -36,8 +35,6 @@ class BistDataFetcher
       if response.code == 200
         puts "HTML içeriği ayrıştırılıyor..."
         doc = Nokogiri::HTML(response.body)
-
-        # Doğru tabloyu bulmak için başlıkları kontrol et
         table = doc.css('table').find do |tbl|
           headers = tbl.css('thead th').map(&:text).map(&:strip)
           headers.include?("Hisse") && headers.include?("Son")
@@ -46,17 +43,16 @@ class BistDataFetcher
         if table
           headers = table.css('thead th').map(&:text).map(&:strip)
           puts "Tablo başlıkları: #{headers.join(', ')}"
-          data_rows = table.css('tr')[1..] # ilk satır başlık, sonrakiler veri
+          data_rows = table.css('tr')[1..]
 
           data_rows&.each do |row|
             cells = row.css('td').map { |td| td.text.strip }
             next if cells.empty? || cells.size < headers.size
-
-            # Hücreleri başlıklarla eşleştir
             stock_hash = Hash[headers.zip(cells)]
-
             begin
-              symbol = stock_hash["Hisse"].to_s.strip.upcase
+              # Sadece sembolü al (örn: "A1CAP A1 CAPITAL..." -> "A1CAP")
+              full_hisse_text = stock_hash["Hisse"].to_s.strip
+              symbol = full_hisse_text.split(/\s+/).first.to_s.upcase
               next if symbol.empty?
               last_price = parse_price(stock_hash["Son"])
               buy_price = parse_price(stock_hash["Alış"])
@@ -85,7 +81,6 @@ class BistDataFetcher
                 timestamp: Time.now
               }
 
-              # Aynı sembol varsa güncelle
               stocks[symbol] = stock_data
               @cache[symbol] = stock_data
             rescue => e
@@ -103,12 +98,17 @@ class BistDataFetcher
       puts "Hata detayı: #{e.backtrace.join("\n")}"
     end
 
-    # Eğer veri çekilemediyse, alternatif kaynak kullan
-    if stocks.empty?
-      puts "Veri çekilemedi, alternatif kaynak kullanılacak"
-      stocks = fetch_from_alternative_source.map { |s| [s[:symbol], s] }.to_h
-    end
+    # Eğer veri çekilemediyse, alternatif kaynak kullanma!
+    # if stocks.empty?
+    #   puts "Veri çekilemedi, alternatif kaynak kullanılacak"
+    #   stocks = fetch_from_alternative_source.map { |s| [s[:symbol], s] }.to_h
+    # end
 
+    # Eğer veri çekilemediyse, boş dizi döndür
+    return [] if stocks.empty?
+
+    # NOT: Geçmiş verileri tek tek çekmek çok uzun sürüyor (600+ hisse).
+    # Artık geçmiş veriler sadece hisse detay sayfasına girildiğinde "on-demand" çekilecek.
     stocks.values
   end
 
@@ -117,7 +117,8 @@ class BistDataFetcher
 
   def parse_price(str)
     return 0 if str.nil? || str.empty?
-    str.gsub('.', '').gsub(',', '.').gsub(/[^\d\.]/, '').to_f
+    # Türkçe format: 1.234,56 -> Noktaları sil, virgülü noktaya çevir
+    str.to_s.gsub('.', '').gsub(',', '.').gsub(/[^\d\.]/, '').to_f
   end
 
   def parse_percent(str)
@@ -134,43 +135,67 @@ class BistDataFetcher
   end
 
   # Alternatif kaynak olarak demo veri kullan
-  def fetch_from_alternative_source
-    puts "Alternatif veri kaynağı kullanılıyor..."
+  # def fetch_from_alternative_source
+  #   puts "Alternatif veri kaynağı kullanılıyor..."
 
-    # Demo veri oluştur
-    demo_stocks = [
-      { symbol: 'AKBNK', last_price: 25.64, change: 0.42, change_percentage: 1.67, volume_tl: 12500000, volume_lot: 500000, timestamp: Time.now },
-      { symbol: 'GARAN', last_price: 30.12, change: -0.28, change_percentage: -0.92, volume_tl: 15600000, volume_lot: 600000, timestamp: Time.now },
-      { symbol: 'THYAO', last_price: 42.86, change: 1.24, change_percentage: 2.98, volume_tl: 8900000, volume_lot: 300000, timestamp: Time.now },
-      { symbol: 'EREGL', last_price: 18.75, change: 0.15, change_percentage: 0.81, volume_tl: 5400000, volume_lot: 200000, timestamp: Time.now },
-      { symbol: 'KRDMD', last_price: 9.42, change: -0.18, change_percentage: -1.88, volume_tl: 7200000, volume_lot: 250000, timestamp: Time.now }
-    ]
+  #   # Demo veri oluştur
+  #   demo_stocks = [
+  #     { symbol: 'AKBNK', last_price: 25.64, change: 0.42, change_percentage: 1.67, volume_tl: 12500000, volume_lot: 500000, timestamp: Time.now },
+  #     { symbol: 'GARAN', last_price: 30.12, change: -0.28, change_percentage: -0.92, volume_tl: 15600000, volume_lot: 600000, timestamp: Time.now },
+  #     { symbol: 'THYAO', last_price: 42.86, change: 1.24, change_percentage: 2.98, volume_tl: 8900000, volume_lot: 300000, timestamp: Time.now },
+  #     { symbol: 'EREGL', last_price: 18.75, change: 0.15, change_percentage: 0.81, volume_tl: 5400000, volume_lot: 200000, timestamp: Time.now },
+  #     { symbol: 'KRDMD', last_price: 9.42, change: -0.18, change_percentage: -1.88, volume_tl: 7200000, volume_lot: 250000, timestamp: Time.now }
+  #   ]
 
-    demo_stocks.each { |stock| @cache[stock[:symbol]] = stock }
+  #   demo_stocks.each { |stock| @cache[stock[:symbol]] = stock }
 
-    @last_fetch_time = Time.now
-    demo_stocks
-  end
+  #   @last_fetch_time = Time.now
+  #   demo_stocks
+  # end
 
   # Hisse geçmişini getir (demo amaçlı rastgele veri)
-  def fetch_stock_history(symbol, days=30)
-    history = []
-    base_price = rand(10..100)
+  def fetch_stock_history(symbol)
+    # Örnek: Yahoo Finance veya başka bir kaynaktan geçmiş fiyatları çek
+    # Dönüş: [{date: '2024-06-01', close: 123.45}, ...]
+    url = "https://query1.finance.yahoo.com/v8/finance/chart/#{symbol}.IS?interval=1d&range=6mo"
+    
+    begin
+      response = HTTParty.get(url, {
+        headers: {
+          'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        },
+        timeout: 5
+      })
 
-    days.times do |i|
-      date = Date.today - (days - i)
-      # Rastgele fiyat değişimi
-      price_change = rand(-2.0..2.0)
-      price = base_price + price_change
-      base_price = price # Bir sonraki gün için baz fiyatı güncelle
+      if response.code == 404
+        # Hisse kodu Yahoo'da bulunamadığında sessizce [] döndür
+        return []
+      elsif response.code != 200
+        puts "Hata: Yahoo Finance API yanıt vermedi (#{symbol}). Kod: #{response.code}"
+        return []
+      end
 
-      history << {
-        date: date,
-        price: price.round(2),
-        volume: rand(10000..1000000)
-      }
+      data = JSON.parse(response.body)
+      timestamps = data.dig("chart", "result", 0, "timestamp")
+      closes = data.dig("chart", "result", 0, "indicators", "quote", 0, "close")
+      
+      return [] unless timestamps && closes
+
+      history = timestamps.zip(closes).map do |ts, close|
+        next if ts.nil? || close.nil?
+        { date: Time.at(ts).strftime("%Y-%m-%d"), close: close }
+      end.compact
+
+      # Son fiyatı nil olanları çıkar
+      history.reject { |h| h[:close].nil? }
+    rescue JSON::ParserError => e
+      puts "JSON Ayrıştırma Hatası (#{symbol}): #{e.message}"
+      puts "Yanıtın başı: #{response&.body.to_s[0..100]}"
+      []
+    rescue => e
+      puts "Geçmiş verisi çekilirken hata (#{symbol}): #{e.message}"
+      []
     end
-
-    history
   end
 end
+

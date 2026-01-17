@@ -1,0 +1,107 @@
+<!-- filepath: /Users/user/RubyProjects/SinatraWorks/SinatraBist/views/favorites.erb -->
+<h2>Favori Hisselerim</h2>
+
+<% if @favorite_stocks.empty? %>
+  <p>Henüz favori listenizde hisse yok.</p>
+<% else %>
+  <table class="table table-striped">
+    <thead>
+      <tr>
+        <th>Sembol</th>
+        <th>Ad</th>
+        <th>Fiyat</th>
+        <th>İşlem</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @favorite_stocks.each do |stock| %>
+        <tr>
+          <td>
+            <a href="/stock/<%= stock['symbol'] %>"><%= stock['symbol'] %></a>
+          </td>
+          <td><%= stock['name'] %></td>
+          <td><%= number_with_delimiter(stock['price']) %></td>
+          <td>
+            <form action="/favorites/remove/<%= stock['symbol'] %>" method="post" style="display:inline;">
+              <button type="submit" class="btn btn-sm btn-danger">Favorilerden Çıkar</button>
+            </form>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% end %>
+
+<hr>
+
+<h4>Hisse Ara ve Favorilere Ekle</h4>
+<form method="get" action="/favorites">
+  <div class="input-group mb-3" style="max-width:400px;">
+    <input type="text" class="form-control" name="search" placeholder="Sembol veya ad ile ara" value="<%= params[:search].to_s %>">
+    <button class="btn btn-outline-secondary" type="submit">Ara</button>
+  </div>
+</form>
+
+<% if params[:search] && !params[:search].strip.empty? %>
+  <% search_term = params[:search].strip.downcase %>
+  <% all_stocks = settings.db_manager.get_all_stocks %>
+  <% found_stock = all_stocks.find { |s| s['symbol'].downcase == search_term || (s['name'] && s['name'].downcase.include?(search_term)) } %>
+  <% if found_stock %>
+    <div class="alert alert-success" style="max-width:500px;">
+      <strong><%= found_stock['symbol'] %></strong> - <%= found_stock['name'] %> bulundu.
+      <% unless @favorite_symbols.include?(found_stock['symbol']) %>
+        <form action="/favorites/add/<%= found_stock['symbol'] %>" method="post" style="display:inline;">
+          <button type="submit" class="btn btn-sm btn-primary ms-2">Favorilere Ekle</button>
+        </form>
+      <% else %>
+        <span class="badge bg-secondary ms-2">Zaten favorilerde</span>
+      <% end %>
+    </div>
+  <% else %>
+    <div class="alert alert-warning" style="max-width:500px;">
+      Aradığınız hisse bulunamadı.
+    </div>
+  <% end %>
+<% end %>
+
+<hr>
+
+<h4>Favorilere Ekleyebileceğiniz Diğer Hisseler</h4>
+<% all_symbols = settings.db_manager.get_all_stocks.map { |s| s['symbol'] } %>
+<% not_fav_symbols = all_symbols - @favorite_symbols %>
+<% if not_fav_symbols.empty? %>
+  <p>Tüm hisseler favorilerde.</p>
+<% else %>
+  <table class="table table-bordered">
+    <thead>
+      <tr>
+        <th>Sembol</th>
+        <th>Ad</th>
+        <th>Fiyat</th>
+        <th>İşlem</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% not_fav_symbols.each do |sym| %>
+        <% stock = settings.db_manager.get_stock(sym) %>
+        <% next unless stock %>
+        <tr>
+          <td>
+            <a href="/stock/<%= stock['symbol'] %>"><%= stock['symbol'] %></a>
+          </td>
+          <td><%= stock['name'] %></td>
+          <td><%= number_with_delimiter(stock['price']) %></td>
+          <td>
+            <form action="/favorites/add/<%= stock['symbol'] %>" method="post" style="display:inline;">
+              <button type="submit" class="btn btn-sm btn-primary">Favorilere Ekle</button>
+            </form>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% end %>
+
+<p>
+  <a href="/">Tüm Hisseler</a>
+</p>
